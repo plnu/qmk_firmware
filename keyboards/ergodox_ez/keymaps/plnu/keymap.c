@@ -42,14 +42,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 // Otherwise, it needs KC_*
 [BASE] = LAYOUT_ergodox(  // layer 0 : default
         // left hand
-        KC_ESC,    KC_1,            KC_2,    KC_3,          KC_4,        KC_5, KC_CAPSLOCK,
-        KC_TAB,    KC_Q,            KC_W,    KC_E,          KC_R,        KC_T, LSFT(KC_INSERT),
-        KC_LSHIFT, KC_A,            KC_S,    ALT_T(KC_D),   CTL_T(KC_F), KC_G,
-        KC_LCTRL,  KC_Z,            KC_X,    KC_C,          KC_V,        KC_B, KC_MINUS,
-        KC_GRV,    KC_NONUS_BSLASH, KC_QUOT, KC_NONUS_HASH, TT(SYMB),
-                                                                      KC_LGUI, KC_HOME,
-                                                                               KC_INSERT,
-                                                            KC_SPACE, KC_LALT, KC_DELETE,
+        KC_ESC,         KC_1,            KC_2,    KC_3,          KC_4,        KC_5, KC_CAPSLOCK,
+        KC_TAB,         KC_Q,            KC_W,    KC_E,          KC_R,        KC_T, LSFT(KC_INSERT),
+        KC_LSHIFT,      KC_A,            KC_S,    ALT_T(KC_D),   CTL_T(KC_F), KC_G,
+        KC_LCTRL,       KC_Z,            KC_X,    KC_C,          KC_V,        KC_B, KC_MINUS,
+        KC_APPLICATION, OSM(MOD_HYPR),    KC_QUOT, KC_NONUS_HASH, TT(SYMB),
+                                                                              KC_LGUI, KC_HOME,
+                                                                                       KC_INSERT,
+                                                                    KC_SPACE, KC_LALT, KC_DELETE,
         // right hand
         KC_PSCREEN,  KC_6, KC_7,        KC_8,        KC_9,    KC_0,          TG(NUM),
         KC_HOME,     KC_Y, KC_U,        KC_I,        KC_O,    KC_P,          KC_BSPACE,
@@ -306,3 +306,13 @@ uint32_t layer_state_set_user(uint32_t state) {
 
   return state;
 };
+
+void oneshot_mods_changed_user(uint8_t mods) {
+  if (mods & MOD_MASK_CTRL) {
+    rgblight_enable();
+    rgblight_setrgb(0x00, 0x10, 0x10);
+  }
+  if (!mods) {
+    rgblight_disable();
+  }
+}
