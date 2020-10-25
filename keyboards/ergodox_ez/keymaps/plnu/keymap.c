@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "action_layer.h"
 #include "version.h"
+#include "raw_hid.h"
 
 #define BASE 0 // default layer
 #define SYMB 1 // symbols
@@ -13,8 +14,107 @@ enum custom_keycodes {
   PLACEHOLDER = SAFE_RANGE, // can always be here
   EPRM,
   VRSN,
-  RGB_SLD
+  RGB_SLD,
+    HID_KEY
 };
+
+struct {
+    uint16_t lctrl;
+    uint16_t rctrl;
+    uint16_t lalt;
+    uint16_t ralt;
+} modTapTimers;
+
+
+typedef struct {
+    uint16_t keycode;
+    uint16_t startTime;
+    uint16_t keyDown;
+    uint16_t keyUp;
+} modTapRecord;
+
+enum MOD_TAP_KEYS {
+    MT_LCTL = 0,
+    MT_LALT,
+    MT_RCTL,
+    MT_RALT,
+    MT_COUNT
+
+};
+
+void resetModTapRecord(modTapRecord* rec) {
+    rec->startTime = 0;
+    rec->keyDown = 0;
+    rec->keyUp = 0;
+}
+
+modTapRecord modTapRecords[MT_COUNT];
+
+enum hidEvents {
+    HID_EVT_KEYPRESS = 1,
+    HID_EVT_TIME
+};
+
+void writeState(unsigned char* packet, char layerHint) {
+    const char lookedUpLayer =
+        layerHint == 0xFF ? get_highest_layer(layer_state) : layerHint;
+
+    const char led = host_keyboard_led_state().raw;
+    memset(packet, 0, RAW_EPSIZE);
+    packet[0] = lookedUpLayer;
+    packet[1] = led;
+
+}
+
+void sendHidState(char layerHint) {
+    unsigned char packet[RAW_EPSIZE];
+    writeState(packet, layerHint);
+    raw_hid_send(packet, RAW_EPSIZE);
+}
+
+void sendHidKeypress(uint8_t hidKey) {
+    unsigned char packet[RAW_EPSIZE];
+    writeState(packet, 0xFF);
+
+    packet[2] = HID_EVT_KEYPRESS;
+    packet[3] = hidKey;
+    raw_hid_send(packet, RAW_EPSIZE);
+};
+
+void sendHidTiming(uint8_t key, uint16_t time) {
+    unsigned char packet[RAW_EPSIZE];
+    writeState(packet, 0xFF);
+
+    packet[2] = HID_EVT_TIME;
+    packet[3] = key;
+    packet[4] = time >> 8;
+    packet[5] = time & 0xFF;
+    packet[6] = (modTapRecords[key].keyDown) >> 8;
+    packet[7] = (modTapRecords[key].keyDown) &0xFF;
+    packet[8] = (modTapRecords[key].keyUp) >> 8;
+    packet[9] = (modTapRecords[key].keyUp) &0xFF;
+    raw_hid_send(packet, RAW_EPSIZE);
+};
+
+//void timeHidKey(uint8_t id, uint16_t* store, keyrecord_t* record) {
+//    if (record->event.pressed) {
+//        *store = record->event.time;
+//    } else if (*store != 0) {
+//        uint16_t elapsed = TIMER_DIFF_16(record->event.time, *store);
+//        sendHidTiming(id, elapsed);
+//        *store = 0;
+//    }
+//}
+
+void timeHidKey(int key, keyrecord_t* record) {
+    if (record->event.pressed) {
+        modTapRecords[key].startTime = record->event.time;
+    } else if (modTapRecords[key].startTime != 0) {
+        uint16_t elapsed = TIMER_DIFF_16(record->event.time, modTapRecords[key].startTime);
+        sendHidTiming(key, elapsed);
+        resetModTapRecord(&(modTapRecords[key]));
+    }
+}
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 /* Keymap 0: Basic layer
@@ -46,17 +146,17 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TAB,         KC_Q,            KC_W,    KC_E,          KC_R,        KC_T, LSFT(KC_INSERT),
         KC_LSHIFT,      KC_A,            KC_S,    ALT_T(KC_D),   CTL_T(KC_F), KC_G,
         KC_LCTRL,       KC_Z,            KC_X,    KC_C,          KC_V,        KC_B, KC_MINUS,
-        KC_APPLICATION, OSM(MOD_HYPR),    KC_QUOT, KC_NONUS_HASH, TT(SYMB),
-                                                                              KC_LGUI, KC_HOME,
+        KC_APPLICATION, OSM(MOD_HYPR),   HID_KEY, KC_NONUS_HASH, TT(SYMB),
+                                                        KC_MEDIA_PREV_TRACK, KC_MEDIA_NEXT_TRACK,
                                                                                        KC_INSERT,
-                                                                    KC_SPACE, KC_LALT, KC_DELETE,
+                                                                    KC_SPACE, TT(SYMB), KC_DELETE,
         // right hand
         KC_PSCREEN,  KC_6, KC_7,        KC_8,        KC_9,    KC_0,          TG(NUM),
         KC_HOME,     KC_Y, KC_U,        KC_I,        KC_O,    KC_P,          KC_BSPACE,
                      KC_H, CTL_T(KC_J), ALT_T(KC_K), KC_L,    KC_SCLN,       KC_RSHIFT,
-        KC_END ,     KC_N, KC_M,        KC_COMM,     KC_DOT,  KC_SLSH,       KC_RCTRL,
+        KC_END ,     KC_N, KC_M,        KC_COMM,     KC_DOT,  KC_SLSH,       KC_LALT,
                                         TT(SYMB),    KC_LEFT, KC_DOWN,KC_UP, KC_RIGHT,
-        KC_END,  KC_RGUI,
+        KC_MEDIA_PLAY_PAUSE,  KC_RGUI,
         KC_PGUP,
         KC_PGDN, KC_BSPACE, KC_ENT
     ),
@@ -97,7 +197,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
        KC_TRNS,  KC_LBRACKET,          KC_RBRACKET, KC_UP,         KC_MINUS,      KC_EQUAL,            KC_F12,
                  KC_LEFT_CURLY_BRACE,  KC_LEFT,     KC_DOWN,       KC_RIGHT,      KC_TRNS,             KC_TRNS,
        KC_TRNS,  KC_RIGHT_CURLY_BRACE, KC_QUOT,     KC_NONUS_HASH, LSFT(KC_QUOT), KC_PIPE/*uk tilde*/, KC_TRNS,
-                                       KC_TRNS,     KC_TRNS,       KC_TRNS,       KC_TRNS,             KC_TRNS,
+                                       KC_PGUP,     KC_PGDN,       KC_TRNS,       KC_TRNS,             KC_TRNS,
        KC_TRNS, KC_TRNS,
        KC_TRNS,
        KC_TRNS,  KC_TRNS,  KC_TRNS
@@ -187,6 +287,20 @@ const macro_t *action_get_macro(keyrecord_t *record, uint8_t id, uint8_t opt)
 };
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+
+    for (int i = 0; i < MT_COUNT; i++) {
+        if (modTapRecords[i].keycode != keycode && modTapRecords[i].startTime != 0) {
+            if (record->event.pressed) {
+                if (modTapRecords[i].keyDown == 0) {
+                    modTapRecords[i].keyDown = keycode;
+                }
+            } else {
+                if (modTapRecords[i].keyUp == 0) {
+                    modTapRecords[i].keyUp = keycode;
+                }
+            }
+        }
+    }
   switch (keycode) {
     // dynamically generate these.
     case EPRM:
@@ -209,12 +323,39 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
       }
       return false;
       break;
+    case HID_KEY:
+        if (record->event.pressed) {
+            sendHidKeypress(0);
+        }
+        return false;
+        break;
+      case CTL_T(KC_F):
+          timeHidKey(MT_LCTL, record);
+          break;
+      case ALT_T(KC_D):
+          timeHidKey(MT_LALT, record);
+          break;
+      case CTL_T(KC_J):
+          timeHidKey(MT_RCTL, record);
+          break;
+      case ALT_T(KC_K):
+          timeHidKey(MT_RALT, record);
+          break;
   }
+
   return true;
 }
 
 // Runs just one time when the keyboard initializes.
 void matrix_init_user(void) {
+    for (int i = 0; i < MT_COUNT; i++) {
+        resetModTapRecord(&(modTapRecords[i]));
+    }
+    modTapRecords[MT_LCTL].keycode = CTL_T(KC_F);
+    modTapRecords[MT_LALT].keycode = ALT_T(KC_D);
+    modTapRecords[MT_RCTL].keycode = CTL_T(KC_J);
+    modTapRecords[MT_RALT].keycode = ALT_T(KC_K);
+
 #ifdef RGBLIGHT_COLOR_LAYER_0
   rgblight_setrgb(RGBLIGHT_COLOR_LAYER_0);
 #endif
@@ -234,7 +375,9 @@ void led_set_user(uint8_t usb_led) {
     } else {
         ergodox_right_led_1_off();
     }
+    sendHidState(0xFF);
 }
+
 // Runs whenever there is a layer state change.
 uint32_t layer_state_set_user(uint32_t state) {
   ergodox_board_led_off();
@@ -304,6 +447,8 @@ uint32_t layer_state_set_user(uint32_t state) {
         break;
     }
 
+  sendHidState(get_highest_layer(state));
+
   return state;
 };
 
@@ -316,3 +461,10 @@ void oneshot_mods_changed_user(uint8_t mods) {
     rgblight_disable();
   }
 }
+
+void raw_hid_receive(uint8_t *data, uint8_t length) {
+    // Your code goes here. data is the packet received from host.
+    sendHidState(0xFF);
+}
+
+
